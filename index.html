@@ -235,60 +235,7 @@
     // ============================================
     // 6. LOAD ANIMATION (FBX)
     // ============================================
-    function loadAnimation(url) {
-      updateLoading('Loading animation...');
-      
-      fbxLoader.load(
-        url,
-        
-        // Success
-        function (fbx) {
-          console.log('✅ Animation loaded');
-          
-          // Find skinned mesh
-          let skinnedMesh;
-          avatar.traverse((child) => {
-            if (child.isSkinnedMesh && !skinnedMesh) {
-              skinnedMesh = child;
-            }
-          });
 
-          if (skinnedMesh && fbx.animations && fbx.animations.length > 0) {
-            mixer = new THREE.AnimationMixer(skinnedMesh);
-            const clip = fbx.animations[0];
-
-            // Try to scale position tracks (may not always be needed)
-            try {
-              clip.tracks.forEach((track) => {
-                if (track.name.includes("position")) {
-                  for (let i = 0; i < track.values.length; i++) {
-                    track.values[i] = track.values[i] / 100;
-                  }
-                }
-              });
-            } catch (e) {
-              console.warn('⚠️ Animation scaling skipped:', e);
-            }
-
-            mixer.clipAction(clip).play();
-            console.log('🎬 Animation playing');
-          } else {
-            console.warn('⚠️ No compatible skinned mesh or animation found');
-          }
-          
-          document.getElementById('loading').style.display = 'none';
-        },
-        
-        // Progress
-        undefined,
-        
-        // Error (non-critical)
-        function (error) {
-          console.warn('⚠️ Animation load failed (avatar still visible):', error);
-          document.getElementById('loading').style.display = 'none';
-        }
-      );
-    }
 
     // ============================================
     // 7. ANIMATION LOOP
