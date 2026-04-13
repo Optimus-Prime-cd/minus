@@ -461,75 +461,115 @@
     // ============================================
     // LOAD ANIMATION (FBX)
     // ============================================
-    function loadAnimation(url) {
-      log('📥', 'Loading animation from:', url);
-      updateLoading('Loading animation...');
-      
-      fbxLoader.load(
-        url,
-        
-        // Success
-        function (fbx) {
-          log('✅', 'Animation loaded successfully');
-          
-          // Find skinned mesh in avatar
-          let skinnedMesh;
-          avatar.traverse((child) => {
-            if (child.isSkinnedMesh && !skinnedMesh) {
-              skinnedMesh = child;
-              log('✅', 'Found skinned mesh:', child.name);
-            }
-          });
-
-          if (skinnedMesh && fbx.animations && fbx.animations.length > 0) {
-            mixer = new THREE.AnimationMixer(skinnedMesh);
-            const clip = fbx.animations[0];
-
-            // Scale position tracks (common for Mixamo animations)
-            try {
-              let scaledTracks = 0;
-              clip.tracks.forEach((track) => {
-                if (track.name.includes("position")) {
-                  for (let i = 0; i < track.values.length; i++) {
-                    track.values[i] = track.values[i] / 100;
-                  }
-                  scaledTracks++;
-                }
-              });
-              log('✅', `Scaled ${scaledTracks} position tracks`);
-            } catch (e) {
-              log('⚠️', 'Animation scaling skipped:', e.message);
-            }
-
-            const action = mixer.clipAction(clip);
-            action.play();
-            log('🎬', 'Animation playing');
-          } else {
-            log('⚠️', 'No compatible skinned mesh or animation found');
-            if (!skinnedMesh) {
-              log('⚠️', 'Avatar has no skinned mesh - animation may not work');
-            }
-          }
-          
-          hideLoading();
-        },
-        
-        // Progress
-        function (xhr) {
-          if (xhr.lengthComputable) {
-            const percent = Math.round((xhr.loaded / xhr.total) * 100);
-            updateLoading(`Loading animation... ${percent}%`);
-          }
-        },
-        
-        // Error (non-critical - avatar will still show)
-        function (error) {
-          log('⚠️', 'Animation load failed (avatar still visible):', error.message);
-          log('ℹ️', 'Avatar will display without animation');
-          hideLoading();
-        }
-      );
+   // ============================================
+// LOAD ANIMATION (FBX)
+// ============================================
+function loadAnimation(url) {
+  log('📥', 'Attempting to load animation from:', url);
+  updateLoading('Loading animation...');
+  
+  // ✅ Check if avatar exists
+  if (!avatar) {
+    log('❌', 'Cannot load animation - avatar not loaded yet');
+    hideLoading();
+    return;
+  }
+  
+  // ✅ Check avatar structure
+  log('🔍', 'Avatar children count:', avatar.children.length);
+  avatar.traverse((child) => {
+    log('🔍', 'Found child:', child.type, child.name);
+    if (child.isSkinnedMesh) {
+      log('✅', 'Found SkinnedMesh:', child.name);
     }
+    if (child.isBone) {
+      log('🦴', 'Found Bone:', child.name);
+    }
+  });
+  
+  fbxLoader.load(
+    url,
+    
+    // Success
+    function (fbx) {
+      log('✅', 'FBX file loaded successfully');
+      log('🎬', 'FBX animations count:', fbx.animations ? fbx.animations.length : 0);
+      
+      // Find skinned mesh in avatar
+      let skinnedMesh;
+      avatar.traverse((child) => {
+        if (child.isSkinnedMesh && !skinnedMesh) {
+          skinnedMesh = child;
+          log('✅', 'Found skinned mesh:', child.name);
+        }
+      });
+
+      if (!skinnedMesh) {
+        log('❌', 'No SkinnedMesh found in avatar - cannot apply animation');
+        log('ℹ️', 'Avatar will display without animation');
+        hideLoading();
+        return;
+      }
+
+      if (!fbx.animations || fbx.animations.length === 0) {
+        log('❌', 'FBX file has no animations');
+        hideLoading();
+        return;
+      }
+
+      // Create animation mixer
+      mixer = new THREE.AnimationMixer(skinnedMesh);
+      const clip = fbx.animations[0];
+      
+      log('🎬', 'Animation clip name:', clip.name);
+      log('🎬', 'Animation duration:', clip.duration, 'seconds');
+      log('🎬', 'Animation tracks:', clip.tracks.length);
+
+      // Scale position tracks (for Mixamo animations)
+      try {
+        let scaledTracks = 0;
+        clip.tracks.forEach((track) => {
+          if (track.name.includes("position")) {
+            for (let i = 0; i < track.values.length; i++) {
+              track.values[i] = track.values[i] / 100;
+            }
+            scaledTracks++;
+          }
+        });
+        if (scaledTracks > 0) {
+          log('✅', `Scaled ${scaledTracks} position tracks`);
+        }
+      } catch (e) {
+        log('⚠️', 'Animation scaling skipped:', e.message);
+      }
+
+      // Play animation
+      const action = mixer.clipAction(clip);
+      action.play();
+      log('✅', 'Animation is now playing');
+      
+      hideLoading();
+    },
+    
+    // Progress
+    function (xhr) {
+      if (xhr.lengthComputable) {
+        const percent = Math.round((xhr.loaded / xhr.total) * 100);
+        updateLoading(`Loading animation... ${percent}%`);
+        log('📊', `Animation loading: ${percent}%`);
+      }
+    },
+    
+    // Error
+    function (error) {
+      log('❌', 'FBX load failed:', error);
+      log('❌', 'Error type:', error.constructor.name);
+      log('❌', 'Error message:', error.message);
+      log('ℹ️', 'Avatar will display without animation');
+      hideLoading();
+    }
+  );
+}
 
     // ============================================
     // ANIMATION LOOP
