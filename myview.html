@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Avatar Viewer</title>
+  <style>
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      background: #000; 
+      font-family: Arial, sans-serif;
+    }
+    #app { 
+      width: 100vw; 
+      height: 100vh; 
+    }
+    #loading, #error {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      text-align: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    #error {
+      color: #ff4444;
+      display: none;
+      background: rgba(0,0,0,0.8);
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading Avatar...</div>
+  <div id="error"></div>
+  <div id="app"></div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.skypack.dev/three@0.150.1';
+    import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/GLTFLoader.js';
+    import { FBXLoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/FBXLoader.js';
+
+    // ============================================
+    // 1. GET MODEL URL FROM QUERY PARAMETER
+    // ============================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const modelUrl = urlParams.get('modelUrl');
+
+    console.log('🔍 Model URL:', modelUrl);
+    console.log('🔍 Full Page URL:', window.location.href);
+
+    if (!modelUrl) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error').style.display = 'block';
+      document.getElementById('error').innerHTML = 
+        '❌ No model URL provided<br><br>' +
+        '<small>Expected: ?modelUrl=YOUR_GLB_URL</small>';
+      throw new Error('Missing modelUrl parameter');
+    }
+
+    // ============================================
+    // 2. SETUP THREE.JS SCENE
+    // ============================================
+    const getSize = () => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+
+    const renderer = new THREE.WebGLRenderer({ 
+      antialias: true,
+      alpha: true 
+    });
+    
+    const { width, height } = getSize();
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    directionalLight.position.set(5, 5, 5);
+    scene.add(ambientLight, directionalLight);
+
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(width, height);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    
+    camera.position.set(0, 1.5, 2.5);
+    camera.lookAt(0, 1, 0);
+
+    const gltfLoader = new GLTFLoader();
+    const fbxLoader = new FBXLoader();
+
+    let mixer;
+    let avatar;
+
+    // ============================================
+    // 3. LOAD GLB AVATAR
+    // ============================================
+    console.log('📥 Loading GLB model...');
+
+    gltfLoader.load(
+      modelUrl,
+      
+      // Success callback
+      function (gltf) {
+        console.log('✅ GLB loaded successfully');
+        avatar = gltf.scene;
+        
+        // Center the avatar
+        const box = new THREE.Box3().setFromObject(avatar);
+        const center = box.getCenter(new THREE.Vector3());
+        avatar.position.x = -center.x;
+        avatar.position.y = -box.min.y;
+        avatar.position.z = -center.z;
+        
+        scene.add(avatar);
+        
+        document.getElementById('loading').textContent = 'Loading animation...';
+
+        // ============================================
+        // 4. LOAD ANIMATION (From GitHub)
+        // ============================================
+        fbxLoader.load(
+          './F_Standing_Idle_Variations_003.fbx',
+          
+          // Animation success
+          function (fbx) {
+            console.log('✅ Animation loaded');
+            
+            // Find skinned mesh
+            let skinnedMesh;
+            avatar.traverse((child) => {
+              if (child.isSkinnedMesh) {
+                skinnedMesh = child;
+              }
+            });
+
+            if (skinnedMesh) {
+              mixer = new THREE.AnimationMixer(skinnedMesh);
+              const clip = fbx.animations[0];
+
+              // Scale position tracks
+              clip.tracks.forEach((track) => {
+                if (track.name.includes("position")) {
+                  track.values.forEach((v, i) => {
+                    track.values[i] = v / 100;
+                  });
+                }
+              });
+
+              mixer.clipAction(clip).play();
+              console.log('🎬 Animation playing');
+            }
+            
+            document.getElementById('loading').style.display = 'none';
+          },
+          
+          // Animation progress
+          undefined,
+          
+          // Animation error (non-critical)
+          function (error) {
+            console.warn('⚠️ Animation load failed (avatar still visible):', error);
+            document.getElementById('loading').style.display = 'none';
+          }
+        );
+      },
+      
+      // GLB progress
+      function (progress) {
+        const percent = (progress.loaded / progress.total * 100).toFixed(0);
+        document.getElementById('loading').textContent = `Loading... ${percent}%`;
+        console.log('📊 Progress:', percent + '%');
+      },
+      
+      // GLB error (critical)
+      function (error) {
+        console.error('❌ GLB load failed:', error);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('error').innerHTML = 
+          '❌ Failed to load avatar<br><br>' +
+          '<small>URL: ' + modelUrl + '</small><br><br>' +
+          '<small>Error: ' + error.message + '</small>';
+      }
+    );
+
+    // ============================================
+    // 5. ANIMATION LOOP
+    // ============================================
+    const clock = new THREE.Clock();
+    
+    function animate() {
+      requestAnimationFrame(animate);
+      if (mixer) mixer.update(clock.getDelta());
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    document.getElementById('app').appendChild(renderer.domElement);
+
+    // ============================================
+    // 6. HANDLE WINDOW RESIZE
+    // ============================================
+    window.addEventListener('resize', () => {
+      const { width, height } = getSize();
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    });
+
+    console.log('✅ Viewer initialized');
+  </script>
+</body>
+</html>
