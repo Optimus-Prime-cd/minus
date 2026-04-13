@@ -19,13 +19,14 @@
       margin: 0; 
       overflow: hidden; 
       background: #000; 
-      font-family: Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     }
     
     #app { 
       width: 100vw; 
       height: 100vh; 
-      touch-action: none;
+      touch-action: pan-x pan-y;
+      position: relative;
     }
     
     #loading, #error {
@@ -37,67 +38,289 @@
       text-align: center;
       z-index: 1000;
       padding: 20px;
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.9);
+      border-radius: 12px;
+      max-width: 90%;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
     
     #error {
       color: #ff4444;
       display: none;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .progress-bar {
+      width: 200px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2196F3, #00BCD4);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    
+    .error-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .error-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    .error-message {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.8);
+      margin-bottom: 16px;
+      word-wrap: break-word;
+    }
+
+    .error-details {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-top: 12px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 6px;
+      text-align: left;
+      font-family: 'Courier New', monospace;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
     }
     
     .retry-btn {
-      margin-top: 15px;
-      padding: 10px 20px;
-      background: #2196F3;
+      margin-top: 16px;
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #2196F3, #1976D2);
       color: white;
       border: none;
-      border-radius: 5px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 14px;
+      font-weight: 500;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
     }
     
     .retry-btn:active {
-      background: #1976D2;
+      transform: scale(0.95);
+    }
+
+    .retry-btn:hover {
+      box-shadow: 0 4px 12px rgba(33, 150, 243, 0.5);
+    }
+
+    #debug {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #0f0;
+      padding: 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      border-radius: 4px;
+      max-width: 90%;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+      z-index: 999;
+    }
+
+    .debug-line {
+      margin: 2px 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   </style>
 </head>
 <body>
-  <div id="loading">Loading Avatar...</div>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">Initializing...</div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress"></div>
+    </div>
+  </div>
+  
   <div id="error"></div>
+  <div id="debug"></div>
   <div id="app"></div>
 
+  <script async src="https://ga.jspm.io/npm:es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/"
+      }
+    }
+  </script>
+
   <script type="module">
-    import * as THREE from 'https://cdn.skypack.dev/three@0.150.1';
-    import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/GLTFLoader.js';
-    import { FBXLoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/FBXLoader.js';
-    import { OrbitControls } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/controls/OrbitControls.js';
+    // ============================================
+    // CONFIGURATION
+    // ============================================
+    // ✅ DEFAULT ANIMATION URL - Replace with your GitHub repo path
+    const DEFAULT_ANIMATION_URL = 'https://github.com/Optimus-Prime-cd/minus/blob/main/F_Standing_Idle_Variations_003.fbx';
+    
+    // Alternative: Use your GitHub Pages URL
+    // const DEFAULT_ANIMATION_URL = 'https://YOUR_USERNAME.github.io/YOUR_REPO/F_Standing_Idle_Variations_003.fbx';
 
     // ============================================
-    // 1. GET PARAMETERS FROM URL
+    // DEBUG & LOGGING
+    // ============================================
+    const DEBUG = new URLSearchParams(window.location.search).get('debug') === 'true';
+    const debugPanel = document.getElementById('debug');
+    if (DEBUG) debugPanel.style.display = 'block';
+
+    function log(emoji, message, data = '') {
+      const timestamp = new Date().toLocaleTimeString();
+      const msg = `${emoji} [${timestamp}] ${message}`;
+      console.log(msg, data);
+      
+      if (DEBUG) {
+        const line = document.createElement('div');
+        line.className = 'debug-line';
+        line.textContent = `${msg} ${data}`;
+        debugPanel.appendChild(line);
+        debugPanel.scrollTop = debugPanel.scrollHeight;
+      }
+    }
+
+    // ============================================
+    // IMPORT THREE.JS WITH FALLBACK
+    // ============================================
+    let THREE, GLTFLoader, FBXLoader, OrbitControls;
+
+    try {
+      log('📦', 'Loading Three.js modules...');
+      
+      const modules = await Promise.all([
+        import('three'),
+        import('three/addons/loaders/GLTFLoader.js'),
+        import('three/addons/loaders/FBXLoader.js'),
+        import('three/addons/controls/OrbitControls.js')
+      ]);
+
+      THREE = modules[0];
+      GLTFLoader = modules[1].GLTFLoader;
+      FBXLoader = modules[2].FBXLoader;
+      OrbitControls = modules[3].OrbitControls;
+
+      log('✅', 'Three.js modules loaded successfully');
+    } catch (error) {
+      log('❌', 'Failed to load Three.js:', error.message);
+      showError(
+        'Module Loading Failed',
+        'Could not load 3D engine. Please check your internet connection.',
+        error.message
+      );
+      throw error;
+    }
+
+    // ============================================
+    // GET PARAMETERS FROM URL
     // ============================================
     const urlParams = new URLSearchParams(window.location.search);
     const modelUrl = urlParams.get('modelUrl') || urlParams.get('avatar');
     const animUrl = urlParams.get('animUrl') || urlParams.get('animation');
     
-    // Default animation from GitHub (replace with your repo)
-    const defaultAnimUrl = 'https://yourusername.github.io/repo-name/F_Standing_Idle_Variations_003.fbx';
-
-    console.log('🔍 Model URL:', modelUrl);
-    console.log('🔍 Animation URL:', animUrl || defaultAnimUrl);
+    // ✅ Use provided animation URL or fall back to default
+    const finalAnimUrl = animUrl || DEFAULT_ANIMATION_URL;
+    
+    log('🔍', 'Model URL:', modelUrl);
+    log('🔍', 'Animation URL:', finalAnimUrl);
+    log('ℹ️', 'Using default animation:', !animUrl);
 
     if (!modelUrl) {
       showError(
-        '❌ No model URL provided<br><br>' +
-        '<small>Usage: ?modelUrl=YOUR_GLB_URL</small><br>' +
-        '<small>Optional: &animUrl=YOUR_FBX_URL</small>'
+        'No Model URL',
+        'Please provide a model URL in the query parameters.',
+        'Usage: ?modelUrl=YOUR_GLB_URL&animUrl=YOUR_FBX_URL (optional)'
       );
       throw new Error('Missing modelUrl parameter');
     }
 
     // ============================================
-    // 2. SETUP THREE.JS SCENE
+    // HELPER FUNCTIONS
     // ============================================
+    function updateLoading(text, progress = null) {
+      document.querySelector('.loading-text').textContent = text;
+      if (progress !== null) {
+        document.getElementById('progress').style.width = progress + '%';
+      }
+    }
+
+    function showError(title, message, details = '') {
+      document.getElementById('loading').style.display = 'none';
+      const errorDiv = document.getElementById('error');
+      errorDiv.style.display = 'block';
+      
+      errorDiv.innerHTML = `
+        <div class="error-icon">⚠️</div>
+        <div class="error-title">${title}</div>
+        <div class="error-message">${message}</div>
+        ${details ? `<div class="error-details">${details}</div>` : ''}
+        <button class="retry-btn" onclick="location.reload()">Retry</button>
+      `;
+      
+      log('❌', title, message);
+    }
+
+    function hideLoading() {
+      setTimeout(() => {
+        const loadingEl = document.getElementById('loading');
+        loadingEl.style.opacity = '0';
+        loadingEl.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => {
+          loadingEl.style.display = 'none';
+        }, 300);
+      }, 500);
+    }
+
+    // ============================================
+    // SETUP THREE.JS SCENE
+    // ============================================
+    log('🎬', 'Initializing 3D scene...');
+
     const getSize = () => ({
       width: window.innerWidth,
       height: window.innerHeight,
@@ -106,7 +329,8 @@
     const renderer = new THREE.WebGLRenderer({ 
       antialias: true,
       alpha: true,
-      powerPreference: "high-performance"
+      powerPreference: "high-performance",
+      preserveDrawingBuffer: true
     });
     
     const { width, height } = getSize();
@@ -114,26 +338,34 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
 
-    // Enhanced Lighting
+    // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(5, 10, 7.5);
+    directionalLight.castShadow = true;
     
     const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
     fillLight.position.set(-5, 0, -5);
     
-    scene.add(ambientLight, directionalLight, fillLight);
+    const backLight = new THREE.DirectionalLight(0xffffff, 0.2);
+    backLight.position.set(0, 5, -5);
+    
+    scene.add(ambientLight, directionalLight, fillLight, backLight);
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
+    renderer.shadowMap.enabled = true;
     
     camera.position.set(0, 1.6, 3);
     camera.lookAt(0, 1, 0);
 
+    log('✅', 'Scene initialized');
+
     // ============================================
-    // 3. ADD ORBIT CONTROLS (Touch Support)
+    // ORBIT CONTROLS
     // ============================================
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -141,8 +373,15 @@
     controls.minDistance = 1;
     controls.maxDistance = 10;
     controls.target.set(0, 1, 0);
+    controls.enablePan = true;
+    controls.enableZoom = true;
     controls.update();
 
+    log('✅', 'Controls initialized');
+
+    // ============================================
+    // LOADERS
+    // ============================================
     const gltfLoader = new GLTFLoader();
     const fbxLoader = new FBXLoader();
 
@@ -151,33 +390,20 @@
     let clock = new THREE.Clock();
 
     // ============================================
-    // 4. HELPER FUNCTIONS
+    // LOAD GLB AVATAR
     // ============================================
-    function showError(message) {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('error').style.display = 'block';
-      document.getElementById('error').innerHTML = 
-        message + '<br><button class="retry-btn" onclick="location.reload()">Retry</button>';
-    }
-
-    function updateLoading(text) {
-      document.getElementById('loading').textContent = text;
-    }
-
-    // ============================================
-    // 5. LOAD GLB AVATAR
-    // ============================================
-    console.log('📥 Loading GLB model...');
+    log('📥', 'Loading GLB model...');
+    updateLoading('Loading Avatar...', 0);
 
     gltfLoader.load(
       modelUrl,
       
-      // Success callback
+      // Success
       function (gltf) {
-        console.log('✅ GLB loaded successfully');
+        log('✅', 'GLB loaded successfully');
         avatar = gltf.scene;
         
-        // Center the avatar
+        // Center and scale
         const box = new THREE.Box3().setFromObject(avatar);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
@@ -186,56 +412,57 @@
         avatar.position.y = -box.min.y;
         avatar.position.z = -center.z;
         
-        // Auto-scale to fit viewport
         const maxDim = Math.max(size.x, size.y, size.z);
-        if (maxDim > 2) {
+        if (maxDim > 0) {
           const scale = 2 / maxDim;
           avatar.scale.setScalar(scale);
         }
         
         scene.add(avatar);
+        log('✅', 'Avatar added to scene');
         
-        // Check for embedded animations first
+        // ✅ HANDLE ANIMATIONS - Check embedded first, then load external
         if (gltf.animations && gltf.animations.length > 0) {
-          console.log('🎬 Using embedded animations');
+          log('🎬', `Found ${gltf.animations.length} embedded animation(s)`);
           mixer = new THREE.AnimationMixer(avatar);
           const action = mixer.clipAction(gltf.animations[0]);
           action.play();
-          
-          document.getElementById('loading').style.display = 'none';
-        } else if (animUrl || defaultAnimUrl) {
-          // Load external animation
-          loadAnimation(animUrl || defaultAnimUrl);
+          hideLoading();
         } else {
-          // No animation
-          document.getElementById('loading').style.display = 'none';
+          // No embedded animations, try to load external FBX animation
+          log('ℹ️', 'No embedded animations, loading external animation...');
+          loadAnimation(finalAnimUrl);
         }
       },
       
       // Progress
-      function (progress) {
-        if (progress.total > 0) {
-          const percent = (progress.loaded / progress.total * 100).toFixed(0);
-          updateLoading(`Loading Avatar... ${percent}%`);
-          console.log('📊 Progress:', percent + '%');
+      function (xhr) {
+        if (xhr.lengthComputable) {
+          const percent = Math.round((xhr.loaded / xhr.total) * 100);
+          updateLoading(`Loading Avatar... ${percent}%`, percent);
+          log('📊', `Progress: ${percent}%`);
+        } else {
+          const loadedMB = (xhr.loaded / 1024 / 1024).toFixed(2);
+          updateLoading(`Loading... ${loadedMB}MB`);
         }
       },
       
       // Error
       function (error) {
-        console.error('❌ GLB load failed:', error);
+        log('❌', 'GLB load failed:', error);
         showError(
-          '❌ Failed to load avatar<br><br>' +
-          '<small>URL: ' + modelUrl + '</small><br><br>' +
-          '<small>Error: ' + error.message + '</small>'
+          'Failed to Load Avatar',
+          'Could not load the 3D model. The file may be corrupted or the URL is incorrect.',
+          `URL: ${modelUrl}\n\nError: ${error.message || error}`
         );
       }
     );
 
     // ============================================
-    // 6. LOAD ANIMATION (FBX)
+    // LOAD ANIMATION (FBX)
     // ============================================
     function loadAnimation(url) {
+      log('📥', 'Loading animation from:', url);
       updateLoading('Loading animation...');
       
       fbxLoader.load(
@@ -243,13 +470,14 @@
         
         // Success
         function (fbx) {
-          console.log('✅ Animation loaded');
+          log('✅', 'Animation loaded successfully');
           
-          // Find skinned mesh
+          // Find skinned mesh in avatar
           let skinnedMesh;
           avatar.traverse((child) => {
             if (child.isSkinnedMesh && !skinnedMesh) {
               skinnedMesh = child;
+              log('✅', 'Found skinned mesh:', child.name);
             }
           });
 
@@ -257,41 +485,54 @@
             mixer = new THREE.AnimationMixer(skinnedMesh);
             const clip = fbx.animations[0];
 
-            // Try to scale position tracks (may not always be needed)
+            // Scale position tracks (common for Mixamo animations)
             try {
+              let scaledTracks = 0;
               clip.tracks.forEach((track) => {
                 if (track.name.includes("position")) {
                   for (let i = 0; i < track.values.length; i++) {
                     track.values[i] = track.values[i] / 100;
                   }
+                  scaledTracks++;
                 }
               });
+              log('✅', `Scaled ${scaledTracks} position tracks`);
             } catch (e) {
-              console.warn('⚠️ Animation scaling skipped:', e);
+              log('⚠️', 'Animation scaling skipped:', e.message);
             }
 
-            mixer.clipAction(clip).play();
-            console.log('🎬 Animation playing');
+            const action = mixer.clipAction(clip);
+            action.play();
+            log('🎬', 'Animation playing');
           } else {
-            console.warn('⚠️ No compatible skinned mesh or animation found');
+            log('⚠️', 'No compatible skinned mesh or animation found');
+            if (!skinnedMesh) {
+              log('⚠️', 'Avatar has no skinned mesh - animation may not work');
+            }
           }
           
-          document.getElementById('loading').style.display = 'none';
+          hideLoading();
         },
         
         // Progress
-        undefined,
+        function (xhr) {
+          if (xhr.lengthComputable) {
+            const percent = Math.round((xhr.loaded / xhr.total) * 100);
+            updateLoading(`Loading animation... ${percent}%`);
+          }
+        },
         
-        // Error (non-critical)
+        // Error (non-critical - avatar will still show)
         function (error) {
-          console.warn('⚠️ Animation load failed (avatar still visible):', error);
-          document.getElementById('loading').style.display = 'none';
+          log('⚠️', 'Animation load failed (avatar still visible):', error.message);
+          log('ℹ️', 'Avatar will display without animation');
+          hideLoading();
         }
       );
     }
 
     // ============================================
-    // 7. ANIMATION LOOP
+    // ANIMATION LOOP
     // ============================================
     function animate() {
       requestAnimationFrame(animate);
@@ -302,32 +543,38 @@
         mixer.update(delta);
       }
       
-      if (controls) {
-        controls.update();
-      }
-      
+      controls.update();
       renderer.render(scene, camera);
     }
-    animate();
 
+    animate();
     document.getElementById('app').appendChild(renderer.domElement);
+    log('✅', 'Render loop started');
 
     // ============================================
-    // 8. HANDLE WINDOW RESIZE
+    // WINDOW RESIZE
     // ============================================
     window.addEventListener('resize', () => {
       const { width, height } = getSize();
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      log('🔄', 'Window resized');
     });
 
-    // Prevent context menu on long press
+    // Prevent context menu
     renderer.domElement.addEventListener('contextmenu', (e) => {
       e.preventDefault();
     });
 
-    console.log('✅ Viewer initialized');
+    // Cleanup
+    window.addEventListener('beforeunload', () => {
+      renderer.dispose();
+      controls.dispose();
+      log('👋', 'Cleanup completed');
+    });
+
+    log('✅', 'Viewer fully initialized');
   </script>
 </body>
 </html>
