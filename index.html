@@ -2,19 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Avatar Viewer</title>
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
     body { 
       margin: 0; 
       overflow: hidden; 
       background: #000; 
       font-family: Arial, sans-serif;
     }
+    
     #app { 
       width: 100vw; 
       height: 100vh; 
+      touch-action: none;
     }
+    
     #loading, #error {
       position: absolute;
       top: 50%;
@@ -24,12 +37,28 @@
       text-align: center;
       z-index: 1000;
       padding: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 10px;
     }
+    
     #error {
       color: #ff4444;
       display: none;
-      background: rgba(0,0,0,0.8);
-      border-radius: 10px;
+    }
+    
+    .retry-btn {
+      margin-top: 15px;
+      padding: 10px 20px;
+      background: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .retry-btn:active {
+      background: #1976D2;
     }
   </style>
 </head>
@@ -42,22 +71,27 @@
     import * as THREE from 'https://cdn.skypack.dev/three@0.150.1';
     import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/GLTFLoader.js';
     import { FBXLoader } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/loaders/FBXLoader.js';
+    import { OrbitControls } from 'https://cdn.skypack.dev/three@0.150.1/examples/jsm/controls/OrbitControls.js';
 
     // ============================================
-    // 1. GET MODEL URL FROM QUERY PARAMETER
+    // 1. GET PARAMETERS FROM URL
     // ============================================
     const urlParams = new URLSearchParams(window.location.search);
-    const modelUrl = urlParams.get('modelUrl');
+    const modelUrl = urlParams.get('modelUrl') || urlParams.get('avatar');
+    const animUrl = urlParams.get('animUrl') || urlParams.get('animation');
+    
+    // Default animation from GitHub (replace with your repo)
+    const defaultAnimUrl = 'https://yourusername.github.io/repo-name/F_Standing_Idle_Variations_003.fbx';
 
     console.log('🔍 Model URL:', modelUrl);
-    console.log('🔍 Full Page URL:', window.location.href);
+    console.log('🔍 Animation URL:', animUrl || defaultAnimUrl);
 
     if (!modelUrl) {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('error').style.display = 'block';
-      document.getElementById('error').innerHTML = 
+      showError(
         '❌ No model URL provided<br><br>' +
-        '<small>Expected: ?modelUrl=YOUR_GLB_URL</small>';
+        '<small>Usage: ?modelUrl=YOUR_GLB_URL</small><br>' +
+        '<small>Optional: &animUrl=YOUR_FBX_URL</small>'
+      );
       throw new Error('Missing modelUrl parameter');
     }
 
@@ -71,7 +105,8 @@
 
     const renderer = new THREE.WebGLRenderer({ 
       antialias: true,
-      alpha: true 
+      alpha: true,
+      powerPreference: "high-performance"
     });
     
     const { width, height } = getSize();
@@ -79,27 +114,58 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
-    directionalLight.position.set(5, 5, 5);
-    scene.add(ambientLight, directionalLight);
+    // Enhanced Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 10, 7.5);
+    
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    fillLight.position.set(-5, 0, -5);
+    
+    scene.add(ambientLight, directionalLight, fillLight);
 
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
     renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
     
-    camera.position.set(0, 1.5, 2.5);
+    camera.position.set(0, 1.6, 3);
     camera.lookAt(0, 1, 0);
+
+    // ============================================
+    // 3. ADD ORBIT CONTROLS (Touch Support)
+    // ============================================
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 1;
+    controls.maxDistance = 10;
+    controls.target.set(0, 1, 0);
+    controls.update();
 
     const gltfLoader = new GLTFLoader();
     const fbxLoader = new FBXLoader();
 
     let mixer;
     let avatar;
+    let clock = new THREE.Clock();
 
     // ============================================
-    // 3. LOAD GLB AVATAR
+    // 4. HELPER FUNCTIONS
+    // ============================================
+    function showError(message) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error').style.display = 'block';
+      document.getElementById('error').innerHTML = 
+        message + '<br><button class="retry-btn" onclick="location.reload()">Retry</button>';
+    }
+
+    function updateLoading(text) {
+      document.getElementById('loading').textContent = text;
+    }
+
+    // ============================================
+    // 5. LOAD GLB AVATAR
     // ============================================
     console.log('📥 Loading GLB model...');
 
@@ -114,90 +180,132 @@
         // Center the avatar
         const box = new THREE.Box3().setFromObject(avatar);
         const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
         avatar.position.x = -center.x;
         avatar.position.y = -box.min.y;
         avatar.position.z = -center.z;
         
+        // Auto-scale to fit viewport
+        const maxDim = Math.max(size.x, size.y, size.z);
+        if (maxDim > 2) {
+          const scale = 2 / maxDim;
+          avatar.scale.setScalar(scale);
+        }
+        
         scene.add(avatar);
         
-        document.getElementById('loading').textContent = 'Loading animation...';
-
-        // ============================================
-        // 4. LOAD ANIMATION (From GitHub)
-        // ============================================
-        fbxLoader.load(
-          './F_Standing_Idle_Variations_003.fbx',
+        // Check for embedded animations first
+        if (gltf.animations && gltf.animations.length > 0) {
+          console.log('🎬 Using embedded animations');
+          mixer = new THREE.AnimationMixer(avatar);
+          const action = mixer.clipAction(gltf.animations[0]);
+          action.play();
           
-          // Animation success
-          function (fbx) {
-            console.log('✅ Animation loaded');
-            
-            // Find skinned mesh
-            let skinnedMesh;
-            avatar.traverse((child) => {
-              if (child.isSkinnedMesh) {
-                skinnedMesh = child;
-              }
-            });
-
-            if (skinnedMesh) {
-              mixer = new THREE.AnimationMixer(skinnedMesh);
-              const clip = fbx.animations[0];
-
-              // Scale position tracks
-              clip.tracks.forEach((track) => {
-                if (track.name.includes("position")) {
-                  track.values.forEach((v, i) => {
-                    track.values[i] = v / 100;
-                  });
-                }
-              });
-
-              mixer.clipAction(clip).play();
-              console.log('🎬 Animation playing');
-            }
-            
-            document.getElementById('loading').style.display = 'none';
-          },
-          
-          // Animation progress
-          undefined,
-          
-          // Animation error (non-critical)
-          function (error) {
-            console.warn('⚠️ Animation load failed (avatar still visible):', error);
-            document.getElementById('loading').style.display = 'none';
-          }
-        );
+          document.getElementById('loading').style.display = 'none';
+        } else if (animUrl || defaultAnimUrl) {
+          // Load external animation
+          loadAnimation(animUrl || defaultAnimUrl);
+        } else {
+          // No animation
+          document.getElementById('loading').style.display = 'none';
+        }
       },
       
-      // GLB progress
+      // Progress
       function (progress) {
-        const percent = (progress.loaded / progress.total * 100).toFixed(0);
-        document.getElementById('loading').textContent = `Loading... ${percent}%`;
-        console.log('📊 Progress:', percent + '%');
+        if (progress.total > 0) {
+          const percent = (progress.loaded / progress.total * 100).toFixed(0);
+          updateLoading(`Loading Avatar... ${percent}%`);
+          console.log('📊 Progress:', percent + '%');
+        }
       },
       
-      // GLB error (critical)
+      // Error
       function (error) {
         console.error('❌ GLB load failed:', error);
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('error').style.display = 'block';
-        document.getElementById('error').innerHTML = 
+        showError(
           '❌ Failed to load avatar<br><br>' +
           '<small>URL: ' + modelUrl + '</small><br><br>' +
-          '<small>Error: ' + error.message + '</small>';
+          '<small>Error: ' + error.message + '</small>'
+        );
       }
     );
 
     // ============================================
-    // 5. ANIMATION LOOP
+    // 6. LOAD ANIMATION (FBX)
     // ============================================
-    const clock = new THREE.Clock();
-    
+    function loadAnimation(url) {
+      updateLoading('Loading animation...');
+      
+      fbxLoader.load(
+        url,
+        
+        // Success
+        function (fbx) {
+          console.log('✅ Animation loaded');
+          
+          // Find skinned mesh
+          let skinnedMesh;
+          avatar.traverse((child) => {
+            if (child.isSkinnedMesh && !skinnedMesh) {
+              skinnedMesh = child;
+            }
+          });
+
+          if (skinnedMesh && fbx.animations && fbx.animations.length > 0) {
+            mixer = new THREE.AnimationMixer(skinnedMesh);
+            const clip = fbx.animations[0];
+
+            // Try to scale position tracks (may not always be needed)
+            try {
+              clip.tracks.forEach((track) => {
+                if (track.name.includes("position")) {
+                  for (let i = 0; i < track.values.length; i++) {
+                    track.values[i] = track.values[i] / 100;
+                  }
+                }
+              });
+            } catch (e) {
+              console.warn('⚠️ Animation scaling skipped:', e);
+            }
+
+            mixer.clipAction(clip).play();
+            console.log('🎬 Animation playing');
+          } else {
+            console.warn('⚠️ No compatible skinned mesh or animation found');
+          }
+          
+          document.getElementById('loading').style.display = 'none';
+        },
+        
+        // Progress
+        undefined,
+        
+        // Error (non-critical)
+        function (error) {
+          console.warn('⚠️ Animation load failed (avatar still visible):', error);
+          document.getElementById('loading').style.display = 'none';
+        }
+      );
+    }
+
+    // ============================================
+    // 7. ANIMATION LOOP
+    // ============================================
     function animate() {
       requestAnimationFrame(animate);
-      if (mixer) mixer.update(clock.getDelta());
+      
+      const delta = clock.getDelta();
+      
+      if (mixer) {
+        mixer.update(delta);
+      }
+      
+      if (controls) {
+        controls.update();
+      }
+      
       renderer.render(scene, camera);
     }
     animate();
@@ -205,13 +313,18 @@
     document.getElementById('app').appendChild(renderer.domElement);
 
     // ============================================
-    // 6. HANDLE WINDOW RESIZE
+    // 8. HANDLE WINDOW RESIZE
     // ============================================
     window.addEventListener('resize', () => {
       const { width, height } = getSize();
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+    });
+
+    // Prevent context menu on long press
+    renderer.domElement.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
     });
 
     console.log('✅ Viewer initialized');
