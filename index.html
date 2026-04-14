@@ -424,6 +424,14 @@
         // ✅ HANDLE ANIMATIONS - Check embedded first, then load external
         if (gltf.animations && gltf.animations.length > 0) {
           log('🎬', `Found ${gltf.animations.length} embedded animation(s)`);
+
+           avatar.traverse((child) => {
+    if (child.isBone) {
+      log('🦴', 'Bone name:', child.name);
+    }
+  });
+
+          
           mixer = new THREE.AnimationMixer(avatar);
           const action = mixer.clipAction(gltf.animations[0]);
           action.play();
