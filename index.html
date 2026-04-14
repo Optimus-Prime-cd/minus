@@ -198,11 +198,7 @@
     // ============================================
     // CONFIGURATION
     // ============================================
-    // ✅ DEFAULT ANIMATION URL - Replace with your GitHub repo path
     const DEFAULT_ANIMATION_URL = 'https://raw.githubusercontent.com/Optimus-Prime-cd/minus/main/F_Standing_Idle_Variations_003.fbx';
-    
-    // Alternative: Use your GitHub Pages URL
-    // const DEFAULT_ANIMATION_URL = 'https://YOUR_USERNAME.github.io/YOUR_REPO/F_Standing_Idle_Variations_003.fbx';
 
     // ============================================
     // DEBUG & LOGGING
@@ -226,7 +222,7 @@
     }
 
     // ============================================
-    // IMPORT THREE.JS WITH FALLBACK
+    // IMPORT THREE.JS
     // ============================================
     let THREE, GLTFLoader, FBXLoader, OrbitControls;
 
@@ -263,7 +259,6 @@
     const modelUrl = urlParams.get('modelUrl') || urlParams.get('avatar');
     const animUrl = urlParams.get('animUrl') || urlParams.get('animation');
     
-    // ✅ Use provided animation URL or fall back to default
     const finalAnimUrl = animUrl || DEFAULT_ANIMATION_URL;
     
     log('🔍', 'Model URL:', modelUrl);
@@ -398,7 +393,7 @@
     gltfLoader.load(
       modelUrl,
       
-      // Success
+      // ✅ SUCCESS - FORCE EXTERNAL FBX ANIMATION
       function (gltf) {
         log('✅', 'GLB loaded successfully');
         avatar = gltf.scene;
@@ -421,26 +416,32 @@
         scene.add(avatar);
         log('✅', 'Avatar added to scene');
         
-        // ✅ HANDLE ANIMATIONS - Check embedded first, then load external
+        // ✅ LOG EMBEDDED ANIMATIONS BUT DON'T USE THEM
         if (gltf.animations && gltf.animations.length > 0) {
-          log('🎬', `Found ${gltf.animations.length} embedded animation(s)`);
-
-           avatar.traverse((child) => {
-    if (child.isBone) {
-      log('🦴', 'Bone name:', child.name);
-    }
-  });
-
-          
-          mixer = new THREE.AnimationMixer(avatar);
-          const action = mixer.clipAction(gltf.animations[0]);
-          action.play();
-          hideLoading();
+          log('ℹ️', `Found ${gltf.animations.length} embedded animation(s) - IGNORING`);
+          gltf.animations.forEach((anim, index) => {
+            log('📋', `  [${index}] ${anim.name} (${anim.duration.toFixed(2)}s)`);
+          });
         } else {
-          // No embedded animations, try to load external FBX animation
-          log('ℹ️', 'No embedded animations, loading external animation...');
-          loadAnimation(finalAnimUrl);
+          log('ℹ️', 'No embedded animations found');
         }
+        
+        // ✅ LOG SKELETON BONES (only in debug mode)
+        if (DEBUG) {
+          log('🦴', '========== Skeleton Structure ==========');
+          let boneCount = 0;
+          avatar.traverse((child) => {
+            if (child.isBone) {
+              log('🦴', `  ${child.name}`);
+              boneCount++;
+            }
+          });
+          log('🦴', `========== Total bones: ${boneCount} ==========`);
+        }
+        
+        // ✅ ALWAYS LOAD EXTERNAL FBX ANIMATION
+        log('🎬', 'Loading external FBX animation (forced)...');
+        loadAnimation(finalAnimUrl);
       },
       
       // Progress
@@ -466,140 +467,146 @@
       }
     );
 
- 
-// ============================================
-// ============================================
-// LOAD ANIMATION (FBX) - WITH AUTO-RETARGETING
-// ============================================
-function loadAnimation(url) {
-  log('📥', 'Loading animation from:', url);
-  updateLoading('Loading animation...');
-  
-  if (!avatar) {
-    log('❌', 'Avatar not loaded yet');
-    hideLoading();
-    return;
-  }
-  
-  fbxLoader.load(
-    url,
-    
-    // Success
-    function (fbx) {
-      log('✅', 'FBX loaded');
-      log('🎬', 'FBX animations:', fbx.animations ? fbx.animations.length : 0);
+    // ============================================
+    // LOAD ANIMATION (FBX) - WITH AUTO-RETARGETING
+    // ============================================
+    function loadAnimation(url) {
+      log('📥', 'Loading animation from:', url);
+      updateLoading('Loading animation...');
       
-      // Find skinned mesh
-      let skinnedMesh;
-      avatar.traverse((child) => {
-        if (child.isSkinnedMesh && !skinnedMesh) {
-          skinnedMesh = child;
-          log('✅', 'Found SkinnedMesh:', child.name);
-        }
-      });
-
-      if (!skinnedMesh) {
-        log('❌', 'No SkinnedMesh found');
+      if (!avatar) {
+        log('❌', 'Avatar not loaded yet');
         hideLoading();
         return;
       }
-
-      if (!fbx.animations || fbx.animations.length === 0) {
-        log('❌', 'FBX has no animations');
-        hideLoading();
-        return;
-      }
-
-      const clip = fbx.animations[0];
-      log('🎬', 'Original animation:', clip.name);
-      log('🎬', 'Original tracks:', clip.tracks.length);
       
-      // ✅ RETARGET TRACKS - Remove "mixamorig:" prefix
-      const retargetedTracks = [];
-      let mappedCount = 0;
-      let skippedCount = 0;
-      
-      clip.tracks.forEach((track) => {
-        // Extract bone name and property (e.g., "mixamorig:Hips.position" → "Hips" + "position")
-        const parts = track.name.split('.');
-        let boneName = parts[0];
-        const property = parts[1]; // position, quaternion, scale
+      fbxLoader.load(
+        url,
         
-        // ✅ REMOVE "mixamorig:" PREFIX
-        if (boneName.startsWith('mixamorig:')) {
-          boneName = boneName.replace('mixamorig:', '');
-        }
-        
-        // Check if this bone exists in Stremoji skeleton
-        let boneExists = false;
-        avatar.traverse((child) => {
-          if (child.isBone && child.name === boneName) {
-            boneExists = true;
-          }
-        });
-        
-        if (boneExists) {
-          // Create new track with cleaned bone name
-          const newTrackName = `${boneName}.${property}`;
-          const newTrack = track.clone();
-          newTrack.name = newTrackName;
+        // Success
+        function (fbx) {
+          log('✅', 'FBX loaded successfully');
+          log('🎬', 'FBX animations:', fbx.animations ? fbx.animations.length : 0);
           
-          // ✅ Scale position values (Mixamo uses cm, we use m)
-          if (property === 'position') {
-            for (let i = 0; i < newTrack.values.length; i++) {
-              newTrack.values[i] = newTrack.values[i] / 100;
+          // Find skinned mesh
+          let skinnedMesh;
+          avatar.traverse((child) => {
+            if (child.isSkinnedMesh && !skinnedMesh) {
+              skinnedMesh = child;
+              log('✅', 'Found SkinnedMesh:', child.name);
             }
+          });
+
+          if (!skinnedMesh) {
+            log('❌', 'No SkinnedMesh found - avatar cannot be animated');
+            hideLoading();
+            return;
+          }
+
+          if (!fbx.animations || fbx.animations.length === 0) {
+            log('❌', 'FBX file contains no animations');
+            hideLoading();
+            return;
+          }
+
+          const clip = fbx.animations[0];
+          log('🎬', 'Original animation name:', clip.name);
+          log('🎬', 'Animation duration:', clip.duration.toFixed(2), 'seconds');
+          log('🎬', 'Original tracks count:', clip.tracks.length);
+          
+          // ✅ RETARGET TRACKS - Remove "mixamorig:" prefix
+          const retargetedTracks = [];
+          let mappedCount = 0;
+          let skippedCount = 0;
+          
+          clip.tracks.forEach((track) => {
+            // Extract bone name and property
+            const parts = track.name.split('.');
+            let boneName = parts[0];
+            const property = parts[1]; // position, quaternion, scale
+            
+            // ✅ REMOVE "mixamorig:" PREFIX
+            if (boneName.startsWith('mixamorig:')) {
+              boneName = boneName.replace('mixamorig:', '');
+            }
+            
+            // Check if this bone exists in avatar skeleton
+            let boneExists = false;
+            avatar.traverse((child) => {
+              if (child.isBone && child.name === boneName) {
+                boneExists = true;
+              }
+            });
+            
+            if (boneExists) {
+              // Create new track with cleaned bone name
+              const newTrackName = `${boneName}.${property}`;
+              const newTrack = track.clone();
+              newTrack.name = newTrackName;
+              
+              // ✅ Scale position values (Mixamo uses cm, we use m)
+              if (property === 'position') {
+                for (let i = 0; i < newTrack.values.length; i++) {
+                  newTrack.values[i] = newTrack.values[i] / 100;
+                }
+              }
+              
+              retargetedTracks.push(newTrack);
+              mappedCount++;
+            } else {
+              skippedCount++;
+              if (DEBUG) {
+                log('⚠️', `Bone not found: ${boneName} (original: ${parts[0]})`);
+              }
+            }
+          });
+          
+          log('✅', `Mapped ${mappedCount} tracks, skipped ${skippedCount}`);
+          
+          if (retargetedTracks.length === 0) {
+            log('❌', 'No tracks could be mapped - skeleton mismatch');
+            hideLoading();
+            return;
           }
           
-          retargetedTracks.push(newTrack);
-          mappedCount++;
-        } else {
-          skippedCount++;
-          if (DEBUG) {
-            log('⚠️', `Bone not found: ${boneName} (from ${parts[0]})`);
+          // Create new clip with retargeted tracks
+          const retargetedClip = new THREE.AnimationClip(
+            clip.name + '_retargeted',
+            clip.duration,
+            retargetedTracks
+          );
+          
+          // Play animation
+          mixer = new THREE.AnimationMixer(skinnedMesh);
+          const action = mixer.clipAction(retargetedClip);
+          action.play();
+          
+          log('✅', `🎬 External FBX animation is now playing!`);
+          log('✅', `Applied ${retargetedTracks.length}/${clip.tracks.length} tracks`);
+          hideLoading();
+        },
+        
+        // Progress
+        function (xhr) {
+          if (xhr.lengthComputable) {
+            const percent = Math.round((xhr.loaded / xhr.total) * 100);
+            updateLoading(`Loading animation... ${percent}%`);
+            log('📊', `FBX loading: ${percent}%`);
           }
+        },
+        
+        // Error
+        function (error) {
+          log('❌', 'FBX load failed:', error.message);
+          log('❌', 'FBX URL:', url);
+          showError(
+            'Animation Load Failed',
+            'Could not load the FBX animation file. Avatar will display without animation.',
+            `URL: ${url}\n\nError: ${error.message}`
+          );
         }
-      });
-      
-      log('✅', `Mapped ${mappedCount} tracks, skipped ${skippedCount}`);
-      
-      if (retargetedTracks.length === 0) {
-        log('❌', 'No tracks could be mapped to skeleton');
-        hideLoading();
-        return;
-      }
-      
-      // Create new clip with retargeted tracks
-      const retargetedClip = new THREE.AnimationClip(
-        clip.name + '_retargeted',
-        clip.duration,
-        retargetedTracks
       );
-      
-      // Play animation
-      mixer = new THREE.AnimationMixer(skinnedMesh);
-      const action = mixer.clipAction(retargetedClip);
-      action.play();
-      
-      log('✅', `🎬 Animation playing! (${retargetedTracks.length}/${clip.tracks.length} tracks)`);
-      hideLoading();
-    },
-    
-    // Progress
-    function (xhr) {
-      if (xhr.lengthComputable) {
-        const percent = Math.round((xhr.loaded / xhr.total) * 100);
-        updateLoading(`Loading animation... ${percent}%`);
-      }
-    },
-    
-    // Error
-    function (error) {
-      log('❌', 'FBX load failed:', error.message);
-      hideLoading();
     }
-  );
-}
 
     // ============================================
     // ANIMATION LOOP
