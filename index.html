@@ -466,96 +466,122 @@
       }
     );
 
-    // ============================================
-    // LOAD ANIMATION (FBX)
-    // ============================================
-   // ============================================
-// LOAD ANIMATION (FBX)
+ 
+// ============================================
+// ============================================
+// LOAD ANIMATION (FBX) - WITH AUTO-RETARGETING
 // ============================================
 function loadAnimation(url) {
-  log('📥', 'Attempting to load animation from:', url);
+  log('📥', 'Loading animation from:', url);
   updateLoading('Loading animation...');
   
-  // ✅ Check if avatar exists
   if (!avatar) {
-    log('❌', 'Cannot load animation - avatar not loaded yet');
+    log('❌', 'Avatar not loaded yet');
     hideLoading();
     return;
   }
-  
-  // ✅ Check avatar structure
-  log('🔍', 'Avatar children count:', avatar.children.length);
-  avatar.traverse((child) => {
-    log('🔍', 'Found child:', child.type, child.name);
-    if (child.isSkinnedMesh) {
-      log('✅', 'Found SkinnedMesh:', child.name);
-    }
-    if (child.isBone) {
-      log('🦴', 'Found Bone:', child.name);
-    }
-  });
   
   fbxLoader.load(
     url,
     
     // Success
     function (fbx) {
-      log('✅', 'FBX file loaded successfully');
-      log('🎬', 'FBX animations count:', fbx.animations ? fbx.animations.length : 0);
+      log('✅', 'FBX loaded');
+      log('🎬', 'FBX animations:', fbx.animations ? fbx.animations.length : 0);
       
-      // Find skinned mesh in avatar
+      // Find skinned mesh
       let skinnedMesh;
       avatar.traverse((child) => {
         if (child.isSkinnedMesh && !skinnedMesh) {
           skinnedMesh = child;
-          log('✅', 'Found skinned mesh:', child.name);
+          log('✅', 'Found SkinnedMesh:', child.name);
         }
       });
 
       if (!skinnedMesh) {
-        log('❌', 'No SkinnedMesh found in avatar - cannot apply animation');
-        log('ℹ️', 'Avatar will display without animation');
+        log('❌', 'No SkinnedMesh found');
         hideLoading();
         return;
       }
 
       if (!fbx.animations || fbx.animations.length === 0) {
-        log('❌', 'FBX file has no animations');
+        log('❌', 'FBX has no animations');
         hideLoading();
         return;
       }
 
-      // Create animation mixer
-      mixer = new THREE.AnimationMixer(skinnedMesh);
       const clip = fbx.animations[0];
+      log('🎬', 'Original animation:', clip.name);
+      log('🎬', 'Original tracks:', clip.tracks.length);
       
-      log('🎬', 'Animation clip name:', clip.name);
-      log('🎬', 'Animation duration:', clip.duration, 'seconds');
-      log('🎬', 'Animation tracks:', clip.tracks.length);
-
-      // Scale position tracks (for Mixamo animations)
-      try {
-        let scaledTracks = 0;
-        clip.tracks.forEach((track) => {
-          if (track.name.includes("position")) {
-            for (let i = 0; i < track.values.length; i++) {
-              track.values[i] = track.values[i] / 100;
-            }
-            scaledTracks++;
+      // ✅ RETARGET TRACKS - Remove "mixamorig:" prefix
+      const retargetedTracks = [];
+      let mappedCount = 0;
+      let skippedCount = 0;
+      
+      clip.tracks.forEach((track) => {
+        // Extract bone name and property (e.g., "mixamorig:Hips.position" → "Hips" + "position")
+        const parts = track.name.split('.');
+        let boneName = parts[0];
+        const property = parts[1]; // position, quaternion, scale
+        
+        // ✅ REMOVE "mixamorig:" PREFIX
+        if (boneName.startsWith('mixamorig:')) {
+          boneName = boneName.replace('mixamorig:', '');
+        }
+        
+        // Check if this bone exists in Stremoji skeleton
+        let boneExists = false;
+        avatar.traverse((child) => {
+          if (child.isBone && child.name === boneName) {
+            boneExists = true;
           }
         });
-        if (scaledTracks > 0) {
-          log('✅', `Scaled ${scaledTracks} position tracks`);
+        
+        if (boneExists) {
+          // Create new track with cleaned bone name
+          const newTrackName = `${boneName}.${property}`;
+          const newTrack = track.clone();
+          newTrack.name = newTrackName;
+          
+          // ✅ Scale position values (Mixamo uses cm, we use m)
+          if (property === 'position') {
+            for (let i = 0; i < newTrack.values.length; i++) {
+              newTrack.values[i] = newTrack.values[i] / 100;
+            }
+          }
+          
+          retargetedTracks.push(newTrack);
+          mappedCount++;
+        } else {
+          skippedCount++;
+          if (DEBUG) {
+            log('⚠️', `Bone not found: ${boneName} (from ${parts[0]})`);
+          }
         }
-      } catch (e) {
-        log('⚠️', 'Animation scaling skipped:', e.message);
-      }
-
-      // Play animation
-      const action = mixer.clipAction(clip);
-      action.play();
-      log('✅', 'Animation is now playing');
+      });
       
+      log('✅', `Mapped ${mappedCount} tracks, skipped ${skippedCount}`);
+      
+      if (retargetedTracks.length === 0) {
+        log('❌', 'No tracks could be mapped to skeleton');
+        hideLoading();
+        return;
+      }
+      
+      // Create new clip with retargeted tracks
+      const retargetedClip = new THREE.AnimationClip(
+        clip.name + '_retargeted',
+        clip.duration,
+        retargetedTracks
+      );
+      
+      // Play animation
+      mixer = new THREE.AnimationMixer(skinnedMesh);
+      const action = mixer.clipAction(retargetedClip);
+      action.play();
+      
+      log('✅', `🎬 Animation playing! (${retargetedTracks.length}/${clip.tracks.length} tracks)`);
       hideLoading();
     },
     
@@ -564,16 +590,12 @@ function loadAnimation(url) {
       if (xhr.lengthComputable) {
         const percent = Math.round((xhr.loaded / xhr.total) * 100);
         updateLoading(`Loading animation... ${percent}%`);
-        log('📊', `Animation loading: ${percent}%`);
       }
     },
     
     // Error
     function (error) {
-      log('❌', 'FBX load failed:', error);
-      log('❌', 'Error type:', error.constructor.name);
-      log('❌', 'Error message:', error.message);
-      log('ℹ️', 'Avatar will display without animation');
+      log('❌', 'FBX load failed:', error.message);
       hideLoading();
     }
   );
